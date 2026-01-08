@@ -193,6 +193,7 @@ def edit_image(
     image_bytes: bytes,
     prompt: str,
     config: AppConfig,
+    reference_images: Optional[list[bytes]] = None,
 ) -> bytes:
     if not config.nano_banana_api_key:
         raise ValueError("Missing NANO_BANANA_API_KEY")
@@ -201,6 +202,8 @@ def edit_image(
     from google import genai
     client = genai.Client(api_key=config.nano_banana_api_key, http_options=http_options)
     image = Image.open(BytesIO(image_bytes))
+    reference_images = reference_images or []
+    reference_pil = [Image.open(BytesIO(item)) for item in reference_images]
 
     from google.genai import types
 
@@ -227,16 +230,17 @@ def edit_image(
     if tools:
         config_kwargs["tools"] = tools
 
+    contents = [prompt, image, *reference_pil]
     if config_kwargs:
         response = client.models.generate_content(
             model=config.nano_banana_model,
-            contents=[prompt, image],
+            contents=contents,
             config=types.GenerateContentConfig(**config_kwargs),
         )
     else:
         response = client.models.generate_content(
             model=config.nano_banana_model,
-            contents=[prompt, image],
+            contents=contents,
         )
 
     for part in response.parts:

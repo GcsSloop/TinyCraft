@@ -218,6 +218,7 @@ async def run_image_job(
     job_id: str,
     image_bytes: bytes,
     prompt: str,
+    reference_images: list[bytes],
     file_name: Optional[str],
     mime: Optional[str],
 ) -> None:
@@ -247,7 +248,7 @@ async def run_image_job(
         )
 
     try:
-        result = edit_image(image_bytes, prompt, load_config())
+        result = edit_image(image_bytes, prompt, load_config(), reference_images)
     except Exception as exc:  # pragma: no cover - surfaced to client
         kind, message = classify_error(exc)
         logger.error("Image job context: %s", extract_error_context(exc))
@@ -274,6 +275,10 @@ async def run_image_job(
 async def create_image_job(
     background: BackgroundTasks,
     image: UploadFile = File(...),
+    references: Optional[list[UploadFile]] = File(
+        None,
+        description="Optional reference images (0-n). Submit multiple files with the same field name.",
+    ),
     description: Optional[str] = Form(None),
     prompt: Optional[str] = Form(None),
     region_x: Optional[int] = Form(None),
@@ -283,8 +288,15 @@ async def create_image_job(
     file_name: Optional[str] = Form(None),
     mime: Optional[str] = Form(None),
 ) -> JobStatus:
+    config = load_config()
     if not image.content_type or not image.content_type.startswith("image/"):
         raise HTTPException(status_code=415, detail="Only image uploads are supported")
+    if references:
+        for ref in references:
+            if not ref.content_type or not ref.content_type.startswith("image/"):
+                raise HTTPException(
+                    status_code=415, detail="Only image uploads are supported"
+                )
     if (description is None) and (prompt is None):
         raise HTTPException(status_code=400, detail="Missing description")
     if any(
@@ -303,6 +315,24 @@ async def create_image_job(
 
     prompt_text = description or prompt or ""
     prompt_text += _build_region_hint(region_x, region_y, region_width, region_height)
+    reference_images = []
+    if references:
+        for ref in references:
+            reference_images.append(await ref.read())
+    total_images = 1 + len(reference_images)
+    model_name = config.nano_banana_model
+    if model_name.startswith("gemini-2.5-flash-image"):
+        model_limit = 3
+    elif model_name.startswith("gemini-3-pro-image"):
+        model_limit = 14
+    else:
+        model_limit = config.nano_banana_max_images
+    max_images = max(1, min(model_limit, config.nano_banana_max_images))
+    if total_images > max_images:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Too many images: {total_images} > {max_images}",
+        )
     job_id = uuid.uuid4().hex
     record = store.create(job_id)
     record.status = "queued"
@@ -315,6 +345,7 @@ async def create_image_job(
         job_id,
         raw,
         prompt_text,
+        reference_images,
         selected_name,
         selected_mime,
     )

@@ -19,7 +19,7 @@ class AppConfig:
     nano_banana_model: str = "gemini-3-pro-image-preview"
     nano_banana_base_url: Optional[str] = None
     nano_banana_timeout: int = 60
-    nano_banana_max_images: int = 5
+    nano_banana_max_images: int = 14
     nano_banana_aspect_ratio: str = "auto"
     nano_banana_image_size: str = "1K"
     nano_banana_response_modalities: str = "TEXT,IMAGE"

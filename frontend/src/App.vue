@@ -11,93 +11,6 @@
     </header>
 
     <el-tabs v-model="activeTab" type="card" class="tc-card">
-      <el-tab-pane name="text" label="文本编辑">
-        <div class="tc-grid">
-          <div>
-            <el-form label-position="top">
-              <el-form-item label="选择文本文件">
-                <div class="tc-actions">
-                  <el-button @click="pickTextFile">选择文件</el-button>
-                  <el-button @click="triggerTextInput" plain>
-                    浏览
-                  </el-button>
-                  <input
-                    ref="textInputRef"
-                    type="file"
-                    accept=".txt,.md,.json,.csv,.log"
-                    class="tc-hidden"
-                    @change="onTextFileChange"
-                  />
-                </div>
-                <div class="tc-meta" v-if="text.fileName">
-                  {{ text.fileName }}
-                </div>
-              </el-form-item>
-
-              <el-form-item label="选区范围">
-                <div class="tc-grid">
-                  <el-input
-                    v-model.number="text.regionStart"
-                    placeholder="起始位置"
-                    type="number"
-                  />
-                  <el-input
-                    v-model.number="text.regionEnd"
-                    placeholder="结束位置"
-                    type="number"
-                  />
-                </div>
-                <el-button size="small" @click="applySelection">
-                  使用当前选中范围
-                </el-button>
-              </el-form-item>
-
-              <el-form-item label="替换内容 / 描述">
-                <el-input
-                  v-model="text.description"
-                  type="textarea"
-                  :rows="4"
-                  placeholder="描述需要替换的内容"
-                />
-              </el-form-item>
-
-              <div class="tc-actions">
-                <el-button type="primary" @click="submitTextJob" :loading="text.busy">
-                  提交修改
-                </el-button>
-                <el-button @click="resetText">重置</el-button>
-              </div>
-            </el-form>
-          </div>
-
-          <div>
-            <div class="tc-preview">
-              <div class="tc-meta">本地预览</div>
-              <textarea
-                ref="textAreaRef"
-                class="tc-textarea"
-                v-model="text.content"
-                @mouseup="captureSelection"
-                @keyup="captureSelection"
-              ></textarea>
-            </div>
-            <div v-if="text.jobId" style="margin-top: 16px;">
-              <el-progress :percentage="text.progress" />
-              <div class="tc-meta">{{ text.message }}</div>
-            </div>
-            <div v-if="text.resultUrl" style="margin-top: 16px;">
-              <el-button type="success" @click="openUrl(text.resultUrl)">
-                打开结果
-              </el-button>
-              <el-button @click="downloadResult(text.resultUrl, text.fileName)">
-                下载
-              </el-button>
-              <textarea class="tc-textarea" v-model="text.resultContent"></textarea>
-            </div>
-          </div>
-        </div>
-      </el-tab-pane>
-
       <el-tab-pane name="image" label="图片编辑">
         <div class="tc-grid">
           <div>
@@ -119,6 +32,45 @@
                 <div class="tc-meta" v-if="image.fileName">
                   {{ image.fileName }}
                 </div>
+              </el-form-item>
+
+              <el-form-item label="参考图（可选）">
+                <div class="tc-actions">
+                  <el-button @click="pickReferenceFiles">添加参考图</el-button>
+                  <el-button @click="triggerReferenceInput" plain>
+                    浏览
+                  </el-button>
+                  <el-button
+                    v-if="image.references.length"
+                    plain
+                    type="danger"
+                    @click="clearReferences"
+                  >
+                    清空
+                  </el-button>
+                  <input
+                    ref="referenceInputRef"
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    class="tc-hidden"
+                    @change="onReferenceFileChange"
+                  />
+                </div>
+                <div v-if="image.references.length" class="tc-reference-list">
+                  <div
+                    v-for="(item, index) in image.references"
+                    :key="`${item.name}-${index}`"
+                    class="tc-reference-item"
+                  >
+                    <img :src="item.url" class="tc-reference-thumb" />
+                    <div class="tc-reference-label">{{ item.name }}</div>
+                    <el-button size="small" @click="removeReference(index)">
+                      移除
+                    </el-button>
+                  </div>
+                </div>
+                <div class="tc-meta" v-else>最多可添加多张参考图。</div>
               </el-form-item>
 
               <el-form-item label="修改描述">
@@ -205,9 +157,10 @@
 import { computed, reactive, ref, onBeforeUnmount } from 'vue';
 import { ElMessage } from 'element-plus';
 
-const activeTab = ref('text');
+const activeTab = ref('image');
 const textInputRef = ref(null);
 const imageInputRef = ref(null);
+const referenceInputRef = ref(null);
 const textAreaRef = ref(null);
 const imagePreviewRef = ref(null);
 const imageCanvasRef = ref(null);
@@ -237,6 +190,7 @@ const image = reactive({
   displayHeight: 0,
   naturalWidth: 0,
   naturalHeight: 0,
+  references: [],
   jobId: '',
   progress: 0,
   message: '',
@@ -272,6 +226,7 @@ const selectionSummary = computed(() => ({
 
 const triggerTextInput = () => textInputRef.value?.click();
 const triggerImageInput = () => imageInputRef.value?.click();
+const triggerReferenceInput = () => referenceInputRef.value?.click();
 
 const pickTextFile = async () => {
   if (!window.showOpenFilePicker) {
@@ -319,6 +274,33 @@ const pickImageFile = async () => {
   }
 };
 
+const pickReferenceFiles = async () => {
+  if (!window.showOpenFilePicker) {
+    triggerReferenceInput();
+    return;
+  }
+  try {
+    const handles = await window.showOpenFilePicker({
+      multiple: true,
+      types: [
+        {
+          description: 'Images',
+          accept: { 'image/*': ['.png', '.jpg', '.jpeg', '.webp'] },
+        },
+      ],
+    });
+    const files = [];
+    for (const handle of handles) {
+      files.push(await handle.getFile());
+    }
+    await loadReferenceFiles(files);
+  } catch (error) {
+    if (error?.name !== 'AbortError') {
+      ElMessage.error('打开参考图失败');
+    }
+  }
+};
+
 const onTextFileChange = async (event) => {
   const file = event.target.files?.[0];
   if (file) {
@@ -331,6 +313,14 @@ const onImageFileChange = async (event) => {
   const file = event.target.files?.[0];
   if (file) {
     await loadImageFile(file);
+  }
+  event.target.value = '';
+};
+
+const onReferenceFileChange = async (event) => {
+  const files = Array.from(event.target.files || []);
+  if (files.length > 0) {
+    await loadReferenceFiles(files);
   }
   event.target.value = '';
 };
@@ -358,6 +348,39 @@ const loadImageFile = async (file) => {
   image.resultUrl = '';
   image.message = '';
   image.progress = 0;
+};
+
+const loadReferenceFiles = async (files) => {
+  const next = [];
+  for (const file of files) {
+    if (!file.type.startsWith('image/')) {
+      ElMessage.warning(`跳过非图片文件: ${file.name}`);
+      continue;
+    }
+    next.push({
+      file,
+      name: file.name,
+      url: URL.createObjectURL(file),
+    });
+  }
+  image.references = [...image.references, ...next];
+};
+
+const removeReference = (index) => {
+  const item = image.references[index];
+  if (item?.url) {
+    URL.revokeObjectURL(item.url);
+  }
+  image.references.splice(index, 1);
+};
+
+const clearReferences = () => {
+  for (const item of image.references) {
+    if (item?.url) {
+      URL.revokeObjectURL(item.url);
+    }
+  }
+  image.references = [];
 };
 
 const syncImageRect = () => {
@@ -481,6 +504,7 @@ const resetImage = () => {
   if (image.resultUrl) {
     URL.revokeObjectURL(image.resultUrl);
   }
+  clearReferences();
   image.previewUrl = '';
   image.resultUrl = '';
   clearImageSelection();
@@ -533,6 +557,11 @@ const submitImageJob = async () => {
   const formData = new FormData();
   formData.append('image', image.file);
   formData.append('description', image.description);
+  if (image.references.length > 0) {
+    for (const item of image.references) {
+      formData.append('references', item.file);
+    }
+  }
   if (imageSelection.width > 0 && imageSelection.height > 0) {
     const scaleX = image.naturalWidth / (image.displayWidth || image.naturalWidth || 1);
     const scaleY = image.naturalHeight / (image.displayHeight || image.naturalHeight || 1);
@@ -634,6 +663,13 @@ onBeforeUnmount(() => {
   if (image.eventSource) {
     image.eventSource.close();
   }
+  if (image.previewUrl) {
+    URL.revokeObjectURL(image.previewUrl);
+  }
+  if (image.resultUrl) {
+    URL.revokeObjectURL(image.resultUrl);
+  }
+  clearReferences();
 });
 </script>
 

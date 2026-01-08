@@ -1,6 +1,6 @@
 nano_banana_model: gemini-3-pro-image-preview
-nano_banana_timeout: 180
-nano_banana_max_images: 5
+nano_banana_timeout: 600
+nano_banana_max_images: 14
 nano_banana_aspect_ratio: "auto"
 nano_banana_image_size: "4K"
 nano_banana_response_modalities: "IMAGE"
