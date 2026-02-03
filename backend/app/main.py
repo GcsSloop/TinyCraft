@@ -4,10 +4,12 @@ import asyncio
 import json
 import logging
 import uuid
+from pathlib import Path
 from typing import AsyncGenerator, Optional
 
 from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import RedirectResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from urllib.parse import quote
 
 from .config import load_config, save_config
@@ -27,13 +29,16 @@ app = FastAPI(
     redoc_url="/redoc",
     openapi_url="/openapi.json",
 )
+webui_dir = Path(__file__).resolve().parents[1] / "webui"
+webui_dir.mkdir(parents=True, exist_ok=True)
+app.mount("/webui", StaticFiles(directory=str(webui_dir), html=True), name="webui")
 store = JobStore()
 logger = logging.getLogger("uvicorn.error")
 
 
 @app.get("/", include_in_schema=False)
 async def index() -> RedirectResponse:
-    return RedirectResponse(url="/docs")
+    return RedirectResponse(url="/webui/")
 
 
 @app.on_event("startup")
